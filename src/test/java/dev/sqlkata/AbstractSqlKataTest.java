@@ -11,7 +11,8 @@ import org.testcontainers.containers.PostgreSQLContainer;
  * настроен на {@code forkCount=1} и {@code reuseForks=true}, поэтому все тесты
  * используют один и тот же экземпляр базы. Схема загружается при старте
  * контейнера из {@code schema/01_init_schema.sql}, затем последовательно
- * {@code schema/02_middle_seed.sql} и {@code schema/03_senior_seed.sql}.</p>
+ * {@code schema/02_middle_seed.sql}, {@code schema/03_senior_seed.sql} и
+ * {@code schema/04_pro_tuning_seed.sql}.</p>
  *
  * <p>Проверяемые SQL-запросы выполняются в транзакциях с откатом, поэтому
  * даже {@code UPDATE}/{@code DELETE}/{@code INSERT ... RETURNING} не меняют
@@ -27,7 +28,8 @@ public abstract class AbstractSqlKataTest {
                     .withInitScripts(
                             "schema/01_init_schema.sql",
                             "schema/02_middle_seed.sql",
-                            "schema/03_senior_seed.sql")
+                            "schema/03_senior_seed.sql",
+                            "schema/04_pro_tuning_seed.sql")
                     .withStartupTimeout(Duration.ofMinutes(3));
 
     private static final SqlKataVerifier VERIFIER;
@@ -69,5 +71,25 @@ public abstract class AbstractSqlKataTest {
     protected static void assertKataStateMatches(
             String kataResource, String verificationResource) {
         VERIFIER.assertKataStateMatches(kataResource, verificationResource);
+    }
+
+    /** Проверяет использование индекса в EXPLAIN-плане запроса. */
+    protected static void assertUsesIndex(String kataResource, String indexName) {
+        VERIFIER.assertUsesIndex(kataResource, indexName);
+    }
+
+    /** Проверяет наличие узла Index Only Scan по индексу. */
+    protected static void assertIndexOnlyScan(String kataResource, String indexName) {
+        VERIFIER.assertIndexOnlyScan(kataResource, indexName);
+    }
+
+    /** Проверяет отсутствие Seq Scan по указанной relation. */
+    protected static void assertNoSeqScan(String kataResource, String relationName) {
+        VERIFIER.assertNoSeqScan(kataResource, relationName);
+    }
+
+    /** Проверяет конкурентный захват очереди двумя соединениями. */
+    protected static void assertSkipLocked(String kataResource, int batchSize) {
+        VERIFIER.assertSkipLocked(kataResource, batchSize);
     }
 }

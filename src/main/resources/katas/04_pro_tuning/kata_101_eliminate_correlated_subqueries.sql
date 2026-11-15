@@ -1,0 +1,47 @@
+-- =============================================================================
+-- KATA 101 · Pro · Устранение N+1 коррелированных подзапросов
+-- =============================================================================
+-- Бизнес-контекст
+--   Карточка клиента показывает три агрегата по событиям. Исходный код делал
+--   три коррелированных подзапроса в SELECT: для 10 клиентов это 30
+--   повторных проходов по большой таблице events_big.
+--
+-- Таблицы
+--   users(user_id, full_name, ...)
+--   events_big(user_id, status, amount, ...)
+--
+-- Плохой исходный запрос
+--   SELECT u.user_id, u.full_name,
+--          (SELECT count(*) FROM events_big e
+--            WHERE e.user_id = u.user_id) AS total_events,
+--          (SELECT count(*) FROM events_big e
+--            WHERE e.user_id = u.user_id AND e.status = 'FAILED') AS failed_events,
+--          (SELECT sum(e.amount) FROM events_big e
+--            WHERE e.user_id = u.user_id AND e.status = 'PAID') AS paid_amount
+--   FROM users u
+--   WHERE u.user_id BETWEEN 1 AND 10
+--   ORDER BY u.user_id;
+--   Причина: PostgreSQL выполняет каждый подзапрос отдельно; при росте числа
+--   клиентов это N+1-паттерн по тяжёлой таблице.
+--
+-- Требования
+--   1. Один раз агрегируй events_big по user_id внутри CTE:
+--        total_events  — COUNT(*)
+--        failed_events — COUNT(*) FILTER (WHERE status='FAILED')
+--        paid_amount   — SUM(amount) FILTER (WHERE status='PAID')
+--   2. Соедини агрегат с users через LEFT JOIN, чтобы сохранить клиентов
+--      без событий.
+--   3. Рассматривай пользователей user_id от 1 до 10 включительно.
+--   4. Верни ровно пять колонок:
+--        user_id        integer
+--        full_name      text
+--        total_events   bigint
+--        failed_events  bigint
+--        paid_amount    numeric — 0 для клиента без PAID-событий
+--   5. Сортировка: user_id ASC.
+--
+-- Проверка
+--   Сравниваются имена/типы колонок, значения и порядок строк.
+-- =============================================================================
+
+SELECT 1 WHERE FALSE;

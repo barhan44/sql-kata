@@ -1,0 +1,53 @@
+-- =============================================================================
+-- KATA 109 · Pro · Фильтрация до оконной функции
+-- =============================================================================
+-- Бизнес-контекст
+--   Для merchant_id = 7 нужен накопительный итог PAID-событий за первое
+--   полугодие 2025. Считать окно по всем 20 000 событиям и только потом
+--   фильтровать — дорого и бессмысленно.
+--
+-- Таблица
+--   events_big(merchant_id, event_id, status, created_at, amount, ...)
+--   Индекс: events_big_merchant_status_created_idx
+--           ON (merchant_id, status, created_at) INCLUDE (amount, event_id).
+--
+-- Плохой исходный запрос
+--   WITH windowed AS (
+--     SELECT merchant_id, event_id, status, created_at, amount,
+--            sum(amount) OVER (
+--              PARTITION BY merchant_id ORDER BY created_at, event_id
+--              ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+--            ) AS running_amount
+--     FROM events_big
+--   )
+--   SELECT ...
+--   FROM windowed
+--   WHERE merchant_id = 7 AND status = 'PAID'
+--     AND created_at >= '2025-01-01' AND created_at < '2025-07-01'
+--   ORDER BY created_at, event_id;
+--   Причина: WindowAgg обрабатывает всю таблицу и все партиции, хотя нужна
+--   одна партиция и небольшой диапазон. При перекосе данных это особенно
+--   заметно.
+--
+-- Требования
+--   1. Сначала отфильтруй merchant_id, status и полуоткрытый диапазон дат
+--      в CTE.
+--   2. Затем вычисли сумму в окне:
+--        PARTITION BY merchant_id
+--        ORDER BY created_at, event_id
+--        ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW.
+--   3. Верни ровно пять колонок:
+--        merchant_id     integer
+--        event_id        bigint
+--        created_at      timestamptz
+--        amount          numeric(12,2)
+--        running_amount  numeric
+--   4. Сортировка: created_at ASC, event_id ASC.
+--
+-- Проверка
+--   Сравниваются имена/типы колонок, значения и порядок строк.
+--   Тест проверяет использование events_big_merchant_status_created_idx
+--   и отсутствие Seq Scan.
+-- =============================================================================
+
+SELECT 1 WHERE FALSE;

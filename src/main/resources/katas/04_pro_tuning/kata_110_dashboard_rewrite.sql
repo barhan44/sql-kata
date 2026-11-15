@@ -1,0 +1,61 @@
+-- =============================================================================
+-- KATA 110 · Pro · Финальный дашборд: комплексная оптимизация
+-- =============================================================================
+-- Бизнес-контекст
+--   Дашборд показывает Top-10 клиентов по оплаченной выручке в мае 2025,
+--   количество их PAID-событий и количество тикетов поддержки. Нужен один
+--   быстрый запрос, а не набор тяжёлых коррелированных подзапросов.
+--
+-- Таблицы
+--   users(user_id, full_name, ...)
+--   events_big(user_id, status, amount, created_at, ...)
+--   support_tickets(ticket_id, user_id, ...)
+--   Индекс: events_big_status_created_idx (status, created_at).
+--
+-- Плохой исходный запрос
+--   SELECT DISTINCT u.user_id, u.full_name,
+--          (SELECT count(*) FROM support_tickets st WHERE st.user_id = u.user_id)
+--            AS ticket_count,
+--          sum(e.amount) AS paid_revenue,
+--          count(e.event_id) AS paid_events
+--   FROM users u
+--   JOIN events_big e ON e.user_id = u.user_id
+--   JOIN support_tickets st ON st.user_id = u.user_id
+--   WHERE DATE(e.created_at) >= '2025-05-01'
+--     AND DATE(e.created_at) < '2025-06-01'
+--     AND e.status = 'PAID'
+--   GROUP BY u.user_id, u.full_name
+--   ORDER BY paid_revenue DESC
+--   OFFSET 0 LIMIT 10;
+--   Проблемы:
+--     • DATE(created_at) делает предикат не-SARGable;
+--     • JOIN тикетов размножает строки и искажает суммы;
+--     • DISTINCT — костыль против размножения;
+--     • коррелированный подзапрос считает тикеты повторно;
+--     • OFFSET 0 бесполезен, а на глубоких страницах деградирует.
+--
+-- Требования
+--   1. Используй CTE для агрегации events_big и support_tickets отдельно.
+--   2. Фильтр для events:
+--        status = 'PAID'
+--        created_at >= TIMESTAMPTZ '2025-05-01 00:00:00+03'
+--        created_at <  TIMESTAMPTZ '2025-06-01 00:00:00+03'
+--   3. Соедини агрегаты с users через INNER JOIN для выручки и LEFT JOIN
+--      для тикетов.
+--   4. Верни Top-10 по paid_revenue DESC, user_id ASC.
+--   5. Верни ровно шесть колонок:
+--        user_id      integer
+--        full_name    text
+--        paid_events  bigint
+--        paid_revenue numeric
+--        ticket_count bigint — 0, если тикетов нет
+--        revenue_rank bigint — 1..10 в итоговом порядке
+--   6. Объясни в решении, как каждый пункт «плохого» запроса устранён.
+--
+-- Проверка
+--   Сравниваются имена/типы колонок, значения и порядок строк.
+--   Тест проверяет events_big_status_created_idx и отсутствие Seq Scan
+--   по events_big.
+-- =============================================================================
+
+SELECT 1 WHERE FALSE;

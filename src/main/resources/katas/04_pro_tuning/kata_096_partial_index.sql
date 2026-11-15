@@ -1,0 +1,47 @@
+-- =============================================================================
+-- KATA 096 · Pro · Частичный индекс для необработанных задач
+-- =============================================================================
+-- Бизнес-контекст
+--   Воркер забирает первые 100 новых событий с числом повторов меньше 3 за
+--   май 2025. Для этого создан частичный индекс, содержащий только такие
+--   строки.
+--
+-- Таблица
+--   events_big(event_id, status, retry_count, created_at, ...)
+--   Индекс: events_big_new_retry_partial_idx ON (created_at, event_id)
+--           WHERE status = 'NEW' AND retry_count < 3.
+--
+-- Плохой исходный запрос
+--   SELECT event_id, created_at, retry_count
+--   FROM events_big
+--   WHERE status = 'NEW'
+--     AND retry_count <= 2
+--     AND DATE(created_at) BETWEEN '2025-05-01' AND '2025-05-31'
+--   ORDER BY created_at, event_id
+--   LIMIT 100;
+--   Причина: DATE(created_at) ломает SARGable-диапазон, а условие
+--   retry_count <= 2 не совпадает с предикатом частичного индекса
+--   retry_count < 3 для проверки выводимости. PostgreSQL не обязан
+--   использовать partial index и уходит в Seq Scan.
+--
+-- Требования
+--   1. Повтори предикат частичного индекса максимально близко:
+--        status = 'NEW'
+--        retry_count < 3
+--        created_at >= TIMESTAMPTZ '2025-05-01 00:00:00+03'
+--        created_at <  TIMESTAMPTZ '2025-06-01 00:00:00+03'
+--   2. Верни ровно три колонки:
+--        event_id     bigint
+--        created_at   timestamptz
+--        retry_count  integer
+--   3. Сортировка: created_at ASC, event_id ASC.
+--   4. LIMIT 100.
+--   5. Объясни, как partial index уменьшает размер и когда планировщик
+--      доказывает, что предикат запроса влечёт предикат индекса.
+--
+-- Проверка
+--   Сравниваются имена/типы колонок, значения и порядок строк.
+--   Тест проверяет events_big_new_retry_partial_idx и отсутствие Seq Scan.
+-- =============================================================================
+
+SELECT 1 WHERE FALSE;

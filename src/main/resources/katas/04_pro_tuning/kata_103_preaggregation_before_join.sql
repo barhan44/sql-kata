@@ -1,0 +1,49 @@
+-- =============================================================================
+-- KATA 103 · Pro · Pre-aggregation перед JOIN
+-- =============================================================================
+-- Бизнес-контекст
+--   CRM-отчёт по активным клиентам должен показать количество/сумму заказов
+--   и количество тикетов поддержки. При прямом соединении users → orders →
+--   support_tickets каждая пара «заказ × тикет» размножается, а суммы
+--   заказов завышаются.
+--
+-- Таблицы
+--   users(user_id, full_name, status, ...)
+--   orders(order_id, user_id, total_amount, ...)
+--   support_tickets(ticket_id, user_id, status, ...)
+--
+-- Плохой исходный запрос
+--   SELECT u.user_id, u.full_name,
+--          count(o.order_id) AS orders_count,
+--          sum(o.total_amount) AS orders_total,
+--          count(st.ticket_id) AS tickets_count
+--   FROM users u
+--   JOIN orders o ON o.user_id = u.user_id
+--   JOIN support_tickets st ON st.user_id = u.user_id
+--   WHERE u.status = 'active'
+--   GROUP BY u.user_id, u.full_name;
+--   Причина: две независимые 1-to-Many связи соединяются до GROUP BY.
+--   Каждый заказ повторяется для каждого тикета, и SUM(total_amount)
+--   становится неверной; DISTINCT не является корректным лечением.
+--
+-- Требования
+--   1. Сделай отдельные CTE-агрегаты по orders и support_tickets.
+--   2. Соедини их с users через LEFT JOIN.
+--   3. Учитывай только users.status = 'active'.
+--   4. Верни ровно шесть колонок:
+--        user_id        integer
+--        full_name      text
+--        orders_count   bigint
+--        orders_total   numeric — сумма total_amount всех заказов, 0 если нет
+--        tickets_count  bigint
+--        open_tickets   bigint — тикеты со статусом OPEN
+--   5. Сортировка: user_id ASC.
+--   6. В комментариях объясни декартов взрыв на числах: если у клиента 3
+--      заказа и 4 тикета, прямой join даёт 12 строк, а сумма заказов
+--      утраивается.
+--
+-- Проверка
+--   Сравниваются имена/типы колонок, значения и порядок строк.
+-- =============================================================================
+
+SELECT 1 WHERE FALSE;

@@ -1,0 +1,45 @@
+-- =============================================================================
+-- KATA 095 · Pro · Покрывающий индекс (Index Only Scan)
+-- =============================================================================
+-- Бизнес-контекст
+--   Аналитике нужны только четыре колонки событий со статусом SHIPPED за
+--   май–июнь 2025. Если все они входят в индекс, PostgreSQL может не читать
+--   heap-страницы вообще.
+--
+-- Таблица
+--   events_big(event_id, status, created_at, event_type, amount, ...)
+--   Индекс: events_big_covering_idx
+--           ON (status, created_at) INCLUDE (event_type, amount).
+--
+-- Плохой исходный запрос
+--   SELECT event_id, status, created_at, event_type, amount, description
+--   FROM events_big
+--   WHERE status = 'SHIPPED'
+--     AND created_at >= '2025-05-01' AND created_at < '2025-07-01';
+--   Причина: event_id и description не входят в индекс; даже если PostgreSQL
+--   возьмёт covering index, ему придётся идти в heap за недостающими
+--   колонками. В плане не будет Index Only Scan с нулевыми Heap Fetches.
+--
+-- Требования
+--   1. Выбери только покрытые колонки:
+--        status, created_at, event_type, amount.
+--   2. Фильтр:
+--        status = 'SHIPPED'
+--        created_at >= TIMESTAMPTZ '2025-05-01 00:00:00+03'
+--        created_at <  TIMESTAMPTZ '2025-07-01 00:00:00+03'
+--   3. Верни ровно четыре колонки:
+--        status      text
+--        created_at  timestamptz
+--        event_type  text
+--        amount      numeric(12,2)
+--   4. Сортировка: created_at ASC, event_type ASC, amount ASC.
+--   5. Добейся в плане Index Only Scan по events_big_covering_idx.
+--      VACUUM в seed уже обновил visibility map для минимизации Heap Fetches.
+--
+-- Проверка
+--   Сравниваются имена/типы колонок, значения и порядок строк.
+--   Тест проверяет наличие Index Only Scan по events_big_covering_idx
+--   и отсутствие Seq Scan.
+-- =============================================================================
+
+SELECT 1 WHERE FALSE;

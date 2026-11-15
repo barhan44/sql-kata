@@ -24,6 +24,7 @@ backend-разработчиков. Каждая ката проверяет н�
 - Java 21, Maven.
 - PostgreSQL 16 (`postgres:16-alpine`).
 - JUnit Jupiter, AssertJ, Testcontainers, PostgreSQL JDBC, slf4j-simple.
+- Jackson Databind (test scope) — разбор `EXPLAIN (FORMAT JSON)`.
 - Testcontainers `2.0.5`. В 2.x модули называются
   `org.testcontainers:testcontainers-postgresql` и
   `org.testcontainers:testcontainers-junit-jupiter`. Это осознанное решение:
@@ -34,12 +35,18 @@ backend-разработчиков. Каждая ката проверяет н�
   контейнер и не менять `forkCount=1`/`reuseForks=true` без пересмотра модели
   синглтона.
 - Схема загружается через `withInitScripts(...)`:
-  `01_init_schema.sql`, `02_middle_seed.sql`, `03_senior_seed.sql`.
-  Новые seed-файлы уровней добавлять в конец списка и запускать все тесты
-  проекта.
+  `01_init_schema.sql`, `02_middle_seed.sql`, `03_senior_seed.sql`,
+  `04_pro_tuning_seed.sql`. Новые seed-файлы уровней добавлять в конец списка
+  и запускать все тесты проекта.
 - Движок: `src/test/java/dev/sqlkata/SqlKataVerifier.java`.
   Ослаблять сравнение ради прохождения конкретной каты запрещено. Исправлять
   нужно запрос или контракт задания.
+- В движке есть проверки:
+  - `assertKataMatches` — значения/типы/порядок;
+  - `assertKataStateMatches` — снимок состояния после DML без `RETURNING`;
+  - `assertUsesIndex`, `assertIndexOnlyScan`, `assertNoSeqScan` — EXPLAIN JSON;
+  - `assertSkipLocked` — две транзакции и `FOR UPDATE SKIP LOCKED`.
+  Не заменять эти проверки «доверием» к SQL-тексту.
 
 ## 3. Структура файлов
 
@@ -48,6 +55,7 @@ src/main/resources/
   schema/01_init_schema.sql
   schema/02_middle_seed.sql
   schema/03_senior_seed.sql
+  schema/04_pro_tuning_seed.sql
   katas/<level>/kata_XXX_<snake_case>.sql
   solutions/<level>/kata_XXX_<snake_case>.sql
   verifications/<level>/kata_XXX_<state_check>.sql
@@ -64,10 +72,10 @@ src/test/java/dev/sqlkata/
 | `01_junior` | `dev.sqlkata.junior` | 001–025 | реализовано, 25 |
 | `02_middle` | `dev.sqlkata.middle` | 026–055 | реализовано, 30 |
 | `03_senior` | `dev.sqlkata.senior` | 056–090 | реализовано, 35 |
-| `04_pro_tuning` | `dev.sqlkata.tuning` | 091–105 | следующая волна |
+| `04_pro_tuning` | `dev.sqlkata.tuning` | 091–110 | реализовано, 20 |
 
-Номера непрерывны и не переиспользуются. Следующая ката продолжает последний
-номер предыдущего уровня. Текущий прогресс: **90/90 эталонов, 001–090**.
+Номера непрерывны и не переиспользуются. Текущий прогресс:
+**110/110 эталонов, 001–110**. Следующая волна начинается с `kata_111`.
 
 ## 4. Контракт одной каты
 
@@ -192,6 +200,13 @@ class Kata001_ExampleTest extends AbstractSqlKataTest {
   `task_nodes`/`task_dependencies`, `category_tree_staging`,
   `shopping_carts`, `product_sync_staging`, шесть пересекающихся сессий и
   одно login-событие без заказа. Строки исходных таблиц не изменяются.
+- `src/main/resources/schema/04_pro_tuning_seed.sql` — данные производительности:
+  `events_big` (20 000 строк), B-Tree/partial/covering/GIN-индексы,
+  `support_tickets`, `task_queue`, `webhook_events`, `ledger_accounts`.
+  Скрипт выполняет `ANALYZE` и `VACUUM (ANALYZE) events_big`; без visibility
+  map `Index Only Scan` в kata_095 не даст нулевых Heap Fetches.
+  Не уменьшать объём `events_big` до десятков строк: планы перестанут
+  использовать индексы, и Pro-тесты потеряют смысл.
 - `task_dependencies` намеренно содержит цикл 13→14→15→13 — это учебный
   материал для `kata_072`; не «исправлять» его.
 - `category_tree_staging` намеренно содержит сирот и глубину больше 3 —
@@ -223,10 +238,11 @@ mvn test
 ```
 
 Для обычного `mvn test` допустим и ожидаем BUILD FAILURE: каждая заглушка
-обязана упасть. Проверять, что число падений равно числу кат (сейчас 90),
+обязана упасть. Проверять, что число падений равно числу кат (сейчас 110),
 а сообщения содержат понятное расхождение, а не `NullPointerException`/ошибку
-движка. В режиме эталонов все 90 тестов должны быть зелёными, включая
-state-проверку `MERGE` в `kata_084`.
+движка. В режиме эталонов все 110 тестов должны быть зелёными, включая
+state-проверку `MERGE` в `kata_084`, EXPLAIN-ассерты и параллельный
+`SKIP LOCKED` в `kata_105`.
 
 Дополнительно:
 
@@ -304,37 +320,62 @@ state-проверку `MERGE` в `kata_084`.
 Задачи на уровни изоляции, блокировки и конкурентные гонки в эту волну не
 входят; для них потребуется отдельный harness с несколькими соединениями.
 
-## 10. Правила генерации волны 04_pro_tuning (091–105)
+## 10. Уровень 04_pro_tuning (091–110) — реализовано
 
-Цель: научить читать планы, проектировать индексы и доказывать улучшение.
+Цель: научить превращать медленный SQL в доказуемо быстрый, сохраняя точный
+результат и корректность под конкуренцией.
 
-Темы:
+### Прогресс уровня
 
-- `EXPLAIN`, `EXPLAIN (ANALYZE, BUFFERS)`, `EXPLAIN ... FORMAT JSON`;
-- последовательное и индексное сканирование, bitmap scan;
-- составные, частичные, covering-индексы (`INCLUDE`);
-- селективность, кардинальность, статистика и `ANALYZE`;
-- сортировки, хеш-агрегация, nested loop vs hash join;
-- `LATERAL` и переписывание запросов;
-- партиционирование и partition pruning;
-- работа с большими объёмами, меры времени и буферов;
-- `pg_stat_statements`/`pg_stat_user_tables` в объяснении, но не как
-  обязательное расширение для теста;
-- поиск и устранение антипаттернов.
+| Блок | Каты | Содержание | Статус |
+|---|---|---|---|
+| SARGable и индексы | 091–100 | полуоткрытые даты, функциональные и partial/covering индексы, composite order, GIN JSONB/FTS, OR→UNION ALL, EXISTS | ✅ 10/10 |
+| Переписывание и конкурентность | 101–110 | коррелированные подзапросы, DISTINCT→semi-join, pre-aggregation, NULL-safe anti-join, `SKIP LOCKED`, idempotent webhook, optimistic locking, batch delete, фильтр до окна, дашборд | ✅ 10/10 |
+| **Итого** | **091–110** | **Pro & Tuning** | **✅ 20/20** |
 
-Правила:
+### Инфраструктура уровня
 
-- обычные ката проверяют корректность результата; performance-ката проверяет
-  **структурные свойства плана**, а не абсолютное время;
-- не сравнивать миллисекунды как стабильный oracle: машины и Docker разные;
-- для tuning-тестов допускается отдельный крупный набор данных, генерируемый
-  детерминированно (`generate_series`) в отдельном контейнере/тестовом классе;
-- проверять отсутствие `Seq Scan` по большой таблице, попадание в индекс,
-  наличие pruning, уменьшение числа буферов — в зависимости от задания;
-- каждое задание должно содержать бизнес-обоснование индекса и цену записи;
-- performance-тесты помечать тегом (`@Tag("tuning")`) и документировать
-  отдельную команду запуска;
-- не добавлять тяжёлые данные в общий seed для Junior/Middle/Senior.
+- `04_pro_tuning_seed.sql` загружает 20 000 строк в `events_big`, индексы,
+  `support_tickets`, `task_queue`, `webhook_events`, `ledger_accounts` и
+  выполняет `ANALYZE` + `VACUUM (ANALYZE) events_big`.
+- Тесты SARGable/индексных кат используют:
+  - `assertUsesIndex(path, indexName)`;
+  - `assertIndexOnlyScan(path, indexName)`;
+  - `assertNoSeqScan(path, relationName)`.
+- `kata_084` использует `assertKataStateMatches` для снимка состояния.
+- `kata_105` использует `assertSkipLocked(path, batchSize)`:
+  две JDBC-транзакции, первый воркер удерживает строки, второй обязан
+  получить следующую пачку без ожидания. Query timeout и Future timeout
+  защищают тест от зависания.
+- Остальные DML-каты (106–108) проверяются через `RETURNING` и откат.
+
+### Как анализировать EXPLAIN
+
+1. Запускать `EXPLAIN (ANALYZE, BUFFERS)` для реальной проверки и
+   `EXPLAIN (FORMAT JSON, COSTS TRUE)` для структурных ассертов.
+2. Смотреть на `Node Type`, `Relation Name`, `Index Name`, `Index Cond`,
+   `Filter`, `Rows Removed by Filter`, `Heap Fetches`, `loops`, `Sort Method`.
+3. Сравнивать planning/actual rows; расхождение >10× обычно означает
+   плохую статистику, корреляцию или неверную селективность.
+4. Не считать миллисекунды oracle. Валидировать индекс, отсутствие Seq Scan,
+   `Heap Fetches ~ 0`, снижение Buffers и отсутствие лишнего Sort.
+5. Проверять, что предикат SARGable и совпадает с выражением индекса
+   (`lower(email)`, partial WHERE, INCLUDE-колонки).
+6. Для оконных запросов проверять, что фильтр выполнен до `WindowAgg` и
+   нет обработки всей таблицы.
+
+### Правила для новых Tuning-кат
+
+- Результат обязан оставаться эквивалентным исходному запросу.
+- Ката содержит «плохой» SQL в комментариях и объяснение антипаттерна.
+- План проверяется структурно, а не по времени.
+- Требования к индексу явно называют индекс/relation и проверяются JSON-планом.
+- Для конкурентных задач — отдельный harness с таймаутами и реальными
+  соединениями; не подменять `SKIP LOCKED` обычным SELECT.
+- Для covering index проверять `Index Only Scan` и Heap Fetches; для
+  конкурентных очередей — непересекающиеся пачки.
+- Тяжёлый seed остаётся аддитивным и не меняет данные Junior/Middle/Senior.
+- Не ослаблять plan assertions, чтобы «прошёл» неверный индексный план.
 
 ## 11. Стиль и коммуникация
 
@@ -344,9 +385,9 @@ state-проверку `MERGE` в `kata_084`.
   выровненные списки колонок; единый стиль внутри файла.
 - Тексты ошибок верификатора должны объяснять, где и что не совпало.
 - Коммиты осмысленные:
-  - `feat(katas): add 056-090 senior wave`
+  - `feat(katas): add 091-110 pro tuning wave`
   - `fix(verifier): compare null values without NPE`
-  - `docs: document tuning rules`
+  - `docs: document EXPLAIN analysis rules`
 
 ## 12. Запрещено
 

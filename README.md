@@ -1,9 +1,9 @@
 # SQL Kata
 
 Практический тренажёр по **PostgreSQL 16+** на Java 21, Maven и Testcontainers.
-Задачи идут по уровням: **Junior → Middle → Senior → Pro/Tuning**. В репозитории
-уже доступны три уровня — 90 кат: Junior (001–025), Middle (026–055) и
-Senior (056–090).
+Все четыре уровня доступны: **Junior → Middle → Senior → Pro & Performance
+Tuning** — **110 кат**: Junior (001–025), Middle (026–055), Senior (056–090)
+и Pro (091–110).
 
 Проверка не имитирует SQL парсером: настоящий PostgreSQL в Docker выполняет
 запрос ученика и эталонный запрос, после чего сравнивает имена колонок, SQL-типы,
@@ -19,7 +19,7 @@ Senior (056–090).
 - Docker с запущенным daemon (Docker Desktop, Colima, OrbStack и т. п.)
 
 ```bash
-# 1. Убедиться, что инфраструктура и все 90 эталонов работают
+# 1. Убедиться, что инфраструктура и все 110 эталонов работают
 mvn test -DuseSolution=true
 
 # 2. Запустить только одну кату
@@ -31,7 +31,10 @@ mvn test -Dtest='Kata02*,Kata03*,Kata04*,Kata05*' -DuseSolution=true
 # 4. Запустить Senior-каты
 mvn test -Dtest='Kata056*,Kata057*,Kata058*,Kata059*,Kata06*,Kata07*,Kata08*,Kata090*' -DuseSolution=true
 
-# 5. Обычный режим: заглушки должны падать с diff-сообщением
+# 5. Запустить Pro & Tuning
+mvn test -Dtest='Kata091*,Kata092*,Kata093*,Kata094*,Kata095*,Kata096*,Kata097*,Kata098*,Kata099*,Kata100*,Kata10*,Kata110*' -DuseSolution=true
+
+# 6. Обычный режим: заглушки должны падать с diff-сообщением
 mvn test
 ```
 
@@ -39,7 +42,7 @@ mvn test
 `solutions/...`. Это быстрый способ проверить целостность всего набора после
 изменения схемы, данных или движка проверки.
 
-При обычном `mvn test` все 90 заглушек `SELECT 1 WHERE FALSE;` ожидаемо падают.
+При обычном `mvn test` все 110 заглушек `SELECT 1 WHERE FALSE;` ожидаемо падают.
 Это и есть стартовое состояние тренажёра.
 
 ## Как решать кату
@@ -88,6 +91,20 @@ SQL-команду** (допускается завершающая точка �
 кандидата и эталона, затем выполняется `ROLLBACK`. Так проверяется kata_084,
 не ослабляя основной движок сравнения.
 
+Для Pro-кат движок дополнительно выполняет `EXPLAIN (FORMAT JSON)` и разбирает
+дерево плана:
+
+- `assertUsesIndex(path, "index_name")` — требует узел `Index Scan`,
+  `Index Only Scan` или `Bitmap Index Scan` с указанным индексом;
+- `assertIndexOnlyScan(path, "index_name")` — требует именно `Index Only Scan`;
+- `assertNoSeqScan(path, "big_table")` — запрещает `Seq Scan` по указанной
+  relation.
+
+`kata_105` проверяется в отдельном конкурентном harness: две JDBC-транзакции
+одновременно вызывают один SQL, первая удерживает блокировки, вторая должна
+получить следующую пачку через `FOR UPDATE SKIP LOCKED`. Обе транзакции
+откатываются.
+
 ### Контейнер
 
 Базовый класс `AbstractSqlKataTest` содержит единственный статический
@@ -102,7 +119,7 @@ SQL-команду** (допускается завершающая точка �
 
 ## Схема и данные
 
-Схема загружается при старте контейнера в три шага:
+Схема загружается при старте контейнера в четыре шага:
 
 1. `src/main/resources/schema/01_init_schema.sql` — базовая схема и данные.
 2. `src/main/resources/schema/02_middle_seed.sql` — аддитивные Middle-данные:
@@ -111,6 +128,9 @@ SQL-команду** (допускается завершающая точка �
 3. `src/main/resources/schema/03_senior_seed.sql` — поток событий, счета с
    пропусками, интервалы подписок, транзакции, граф зависимостей с циклом,
    staging-дерево, JSONB-корзины и staging для `MERGE`.
+4. `src/main/resources/schema/04_pro_tuning_seed.sql` — 20 000 событий,
+   очередь задач, тикеты поддержки, вебхуки, счета и индексы. Скрипт выполняет
+   `ANALYZE` и `VACUUM (ANALYZE)` для реалистичных планов.
 
 Базовые строки не изменяются — seed-скрипты только добавляют новые данные.
 
@@ -124,18 +144,23 @@ SQL-команду** (допускается завершающая точка �
 | `orders` | 30 | заказы за январь–июнь 2024 |
 | `order_items` | 44 | позиции с вычисляемым `line_total` |
 | `payments` | 34 | оплаты, неуспешные попытки, возвраты и «зависший» платёж |
-| `user_sessions` | 41 | сессии, устройства, конверсии и пересекающиеся интервалы |
-| `audit_logs` | 39 | журнал событий с дубликатами, JSONB и логином без заказа |
-| `user_contact_candidates` | 20 | несколько контактов пользователя из разных источников |
+| `user_sessions` | 41 | сессии и пересекающиеся интервалы |
+| `audit_logs` | 39 | журнал событий с дубликатами и JSONB |
+| `user_contact_candidates` | 20 | несколько контактов пользователя |
 | `user_events` | 38 | поток логинов, просмотров, поиска и покупок |
 | `invoices` | 20 | счета с пропусками в нумерации |
 | `user_subscriptions` | 20 | пересекающиеся периоды подписок |
 | `account_transactions` | 30 | транзакции для накопительного баланса |
 | `task_nodes` | 16 | вершины графа задач |
 | `task_dependencies` | 22 | рёбра DAG и циклическая компонента |
-| `category_tree_staging` | 12 | staging-дерево с сиротами и превышением глубины |
-| `shopping_carts` | 20 | JSONB-корзины с вложенными items/payment/debug |
-| `product_sync_staging` | 6 | staging для синхронизации каталога через `MERGE` |
+| `category_tree_staging` | 12 | staging-дерево с сиротами и глубиной |
+| `shopping_carts` | 20 | JSONB-корзины |
+| `product_sync_staging` | 6 | staging для `MERGE` |
+| `events_big` | 20 000 | нагрузочная таблица с B-Tree/partial/covering/GIN-индексами |
+| `support_tickets` | 200 | вторая 1-to-Many ветка |
+| `task_queue` | 60 | очередь для `FOR UPDATE SKIP LOCKED` |
+| `webhook_events` | 10 | идемпотентные входящие события |
+| `ledger_accounts` | 5 | счета с balance/version для optimistic locking |
 
 В данных намеренно встречаются:
 
@@ -151,7 +176,8 @@ SQL-команду** (допускается завершающая точка �
 - ежедневные серии логинов, 30-минутные паузы и пересекающиеся сессии;
 - пропуски в нумерации счетов и пересекающиеся подписки;
 - цикл в графе задач, staging-сироты и превышение глубины дерева;
-- иерархии категорий и сотрудников.
+- 20 000 событий, редкие типы/статусы для селективных индексов;
+- перекос данных по merchant/user для задач о планах и окнах.
 
 ## Каталог Junior-уровня
 
@@ -286,6 +312,73 @@ SQL-команду** (допускается завершающая точка �
 `src/test/java/dev/sqlkata/senior/`. Проверочный SELECT для kata_084 лежит в
 `verifications/03_senior/`.
 
+## Уровень 4: Pro & Performance Tuning (091–110)
+
+| Блок | Каты | Темы | Статус |
+|---|---|---|---|
+| SARGable и индексы | 091–100 | date/email/арифметика, composite/covering/partial, GIN JSONB/FTS, OR→UNION ALL, EXISTS | ✅ 10/10 |
+| Переписывание и конкурентность | 101–110 | N+1, DISTINCT→EXISTS, pre-aggregation, anti-join, `SKIP LOCKED`, idempotent webhook, optimistic lock, batch delete, до-оконный фильтр, финальный дашборд | ✅ 10/10 |
+| **Итого** | **091–110** | **Pro & Tuning** | **✅ 20/20** |
+
+## Каталог Pro-уровня
+
+| № | Тема | Файл |
+|---|---|---|
+| 091 | SARGable-фильтр по дате | `sargable_date_filter` |
+| 092 | SARGable email и функциональный индекс | `sargable_email_index` |
+| 093 | SARGable-арифметика | `sargable_arithmetic` |
+| 094 | Порядок колонок composite index | `composite_index_order` |
+| 095 | Covering index / Index Only Scan | `covering_index` |
+| 096 | Partial index | `partial_index` |
+| 097 | GIN по JSONB | `jsonb_gin` |
+| 098 | Полнотекстовый GIN | `fulltext_gin` |
+| 099 | OR по разным колонкам → UNION ALL | `or_union_indexes` |
+| 100 | EXISTS вместо COUNT(*) > 0 | `exists_instead_of_count` |
+| 101 | Удаление N+1 коррелированных подзапросов | `eliminate_correlated_subqueries` |
+| 102 | DISTINCT после JOIN → semi-join | `distinct_vs_exists` |
+| 103 | Pre-aggregation перед JOIN | `preaggregation_before_join` |
+| 104 | NOT IN с NULL → NOT EXISTS | `not_in_to_antijoin` |
+| 105 | Атомарный захват очереди `SKIP LOCKED` | `skip_locked_queue` |
+| 106 | Идемпотентный вебхук | `idempotent_webhook` |
+| 107 | Оптимистичная блокировка | `optimistic_locking` |
+| 108 | Батчевое удаление | `batch_delete` |
+| 109 | Фильтр до оконной функции | `filter_before_window` |
+| 110 | Финальный дашборд | `dashboard_rewrite` |
+
+Пути: `katas/04_pro_tuning/` и `solutions/04_pro_tuning/`. Тесты —
+`src/test/java/dev/sqlkata/tuning/`. Каждый файл задачи содержит разбор
+«плохого» SQL и ожидаемый контракт результата.
+
+### Как анализировать EXPLAIN
+
+Запустите запрос вручную в контейнере или psql:
+
+```sql
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT ...;
+```
+
+Что смотреть:
+
+1. **Размер сканирования**: `Seq Scan` по большой таблице — повод проверить
+   SARGable-предикат и индекс. `Index Scan`/`Bitmap Index Scan` должны иметь
+   узкий `Index Cond`, а не только `Filter`.
+2. **Стоимость и строки**: сравните `rows` планировщика с `actual rows`.
+   Большое расхождение указывает на устаревшую статистику или correlation.
+3. **Повторные циклы**: `loops` у вложенного узла показывает N+1/коррелированный
+   доступ. Высокий loops × cost — типичный источник деградации.
+4. **Heap Fetches**: в `Index Only Scan` они должны быть близки к нулю; иначе
+   нужен `VACUUM` и актуальная visibility map.
+5. **Сортировки и агрегаты**: `Sort`, `Incremental Sort`, `HashAggregate` —
+   проверьте, нельзя ли получить порядок из индекса.
+6. **Buffers**: `shared hit/read` показывает реальный объём чтения. Это
+   надёжнее абсолютного времени выполнения.
+7. **Rows Removed by Filter**: большое значение означает, что индекс не
+   покрывает часть предиката и читается лишнее.
+
+Ориентируйтесь на структуру плана и объём прочитанных страниц, а не на
+миллисекунды: скорость зависит от ноутбука, Docker и кэшей.
+
 ## Дорожная карта
 
 | Уровень | Каты | Темы | Статус |
@@ -293,9 +386,10 @@ SQL-команду** (допускается завершающая точка �
 | `01_junior` | 001–025 | фильтрация, NULL, JOIN, агрегаты, подзапросы, даты | ✅ готово |
 | `02_middle` | 026–055 | окна, CTE, JSONB, массивы, `LATERAL`, DML с `RETURNING` | ✅ готово |
 | `03_senior` | 056–090 | продвинутые фреймы, рекурсия и графы, `MERGE`, многомерная агрегация, SQL/JSON | ✅ готово |
-| `04_pro_tuning` | 091–105 | планы, индексы, статистика, `EXPLAIN ANALYZE`, партиционирование | ⏳ запланировано |
+| `04_pro_tuning` | 091–110 | SARGable, индексы, EXPLAIN, query rewrite, `SKIP LOCKED`, конкурентность | ✅ готово |
 
-Правила добавления следующих волн описаны в [CLAUDE.md](CLAUDE.md).
+Все четыре уровня завершены. Правила поддержки и расширения описаны в
+[CLAUDE.md](CLAUDE.md).
 
 ## Полезные команды
 
@@ -304,13 +398,13 @@ SQL-команду** (допускается завершающая точка �
 mvn test -DuseSolution=true
 
 # Один тест в режиме эталона
-mvn test -DuseSolution=true -Dtest=Kata090_RetentionLtvForecastTest
+mvn test -DuseSolution=true -Dtest=Kata110_DashboardRewriteTest
 
 # Один тест с решением ученика
-mvn test -Dtest=Kata090_RetentionLtvForecastTest
+mvn test -Dtest=Kata110_DashboardRewriteTest
 
 # Полный diff каты
-cat target/surefire-reports/dev.sqlkata.senior.Kata084_MergeProductSyncTest.txt
+cat target/surefire-reports/dev.sqlkata.tuning.Kata110_DashboardRewriteTest.txt
 ```
 
 ## Требования к запросу
@@ -330,6 +424,10 @@ cat target/surefire-reports/dev.sqlkata.senior.Kata084_MergeProductSyncTest.txt
   и эталона различались бы. Это показано в kata_052.
 - `MERGE` в PostgreSQL 16 не поддерживает `RETURNING`; его результат
   проверяется отдельным SELECT-снимком состояния (kata_084).
+- Pro-каты дополнительно проверяют план (`EXPLAIN FORMAT JSON`) и, где нужно,
+  конкурентное поведение двух JDBC-соединений.
+- Абсолютное время выполнения не является oracle: стабильность плана и
+  семантика важнее миллисекунд.
 
 Если Docker не запущен, тесты не смогут создать контейнер. Это единственная
 внешняя зависимость тренажёра.

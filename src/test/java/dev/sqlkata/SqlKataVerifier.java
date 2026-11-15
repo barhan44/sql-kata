@@ -17,9 +17,20 @@ import java.sql.Timestamp;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.Set;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import org.postgresql.util.PGobject;
 
@@ -41,6 +52,9 @@ import org.postgresql.util.PGobject;
 public final class SqlKataVerifier {
 
     private static final int MAX_ROWS_IN_DIFF = 12;
+    private static final Set<String> INDEX_NODE_TYPES = Set.of(
+            "Index Scan", "Index Only Scan", "Bitmap Index Scan");
+    private static final ObjectMapper JSON_MAPPER = new ObjectMapper();
 
     private final String jdbcUrl;
     private final String username;
@@ -104,6 +118,169 @@ public final class SqlKataVerifier {
             fail(buildStateFailureMessage(
                     kataResource, candidateResource, solutionResource,
                     verificationPath, useSolution, candidate, reference, mismatch));
+        }
+    }
+
+    /**
+     * Проверяет, что в плане запроса используется указанный индекс
+     * узлом Index Scan, Index Only Scan или Bitmap Index Scan.
+     */
+    public void assertUsesIndex(String kataPath, String indexName) {
+        PlanSnapshot plan = explainKata(kataPath);
+        boolean found = plan.nodes().stream().anyMatch(node ->
+                INDEX_NODE_TYPES.contains(node.nodeType())
+                        && indexName.equals(node.indexName()));
+        if (!found) {
+            fail("""
+                    Запрос не использует индекс %s.
+                    Индекс должен встречаться в узле Index Scan, Index Only Scan
+                    или Bitmap Index Scan.
+
+                    Узлы плана:
+                    %s
+                    """.formatted(indexName, plan.render()));
+        }
+    }
+
+    /**
+     * Проверяет, что в плане запроса используется указанный индекс именно
+     * узлом Index Only Scan (без обязательного чтения heap).
+     */
+    public void assertIndexOnlyScan(String kataPath, String indexName) {
+        PlanSnapshot plan = explainKata(kataPath);
+        boolean found = plan.nodes().stream().anyMatch(node ->
+                "Index Only Scan".equals(node.nodeType())
+                        && indexName.equals(node.indexName()));
+        if (!found) {
+            fail("""
+                    Запрос не использует Index Only Scan по индексу %s.
+
+                    Узлы плана:
+                    %s
+                    """.formatted(indexName, plan.render()));
+        }
+    }
+
+    /**
+     * Проверяет, что в плане нет Seq Scan по указанной relation.
+     */
+    public void assertNoSeqScan(String kataPath, String relationName) {
+        PlanSnapshot plan = explainKata(kataPath);
+        boolean hasSeqScan = plan.nodes().stream().anyMatch(node ->
+                "Seq Scan".equals(node.nodeType())
+                        && relationName.equals(node.relationName()));
+        if (hasSeqScan) {
+            fail("""
+                    Найдён Seq Scan по большей таблице %s.
+
+                    Узлы плана:
+                    %s
+                    """.formatted(relationName, plan.render()));
+        }
+    }
+
+    /**
+     * Проверяет конкурентный захват очереди двумя соединениями.
+     *
+     * <p>Первый воркер держит открытую транзакцию с захваченными строками,
+     * второй воркер в это время обязан получить другую пачку. Без
+     * {@code FOR UPDATE SKIP LOCKED} второй запрос заблокируется и упадёт
+     * по query timeout. Обе транзакции в конце откатываются.</p>
+     */
+    public void assertSkipLocked(String kataPath, int batchSize) {
+        String resource = resolveCandidateResource(kataPath);
+        String sql = readResource(resource);
+        Connection first = null;
+        Connection second = null;
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        try {
+            first = openConnection();
+            second = openConnection();
+            first.setAutoCommit(false);
+            second.setAutoCommit(false);
+
+            List<QueueClaim> firstBatch = executeQueueClaim(first, sql, 5);
+            if (firstBatch.size() != batchSize) {
+                fail("""
+                        Первый воркер должен захватить %d задач, фактически захватил %d.
+                        Ресурс: %s
+                        SQL:
+                        %s
+                        """.formatted(batchSize, firstBatch.size(), resource, indentedSql(sql)));
+            }
+            validateClaimedStatuses(firstBatch, "первый", resource);
+
+            Connection secondConnection = second;
+            Future<List<QueueClaim>> future = executor.submit(
+                    () -> executeQueueClaim(secondConnection, sql, 5));
+            List<QueueClaim> secondBatch;
+            try {
+                secondBatch = future.get(10, TimeUnit.SECONDS);
+            } catch (TimeoutException e) {
+                future.cancel(true);
+                fail("""
+                        Второй воркер не завершился за 10 секунд.
+                        Вероятно, запрос не использует FOR UPDATE SKIP LOCKED
+                        и ждёт блокировку строк, захваченных первым воркером.
+                        Ресурс: %s
+                        """.formatted(resource));
+                return; // unreachable
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                fail("Проверка SKIP LOCKED была прервана.");
+                return; // unreachable
+            } catch (ExecutionException e) {
+                Throwable cause = e.getCause();
+                String causeMessage = cause == null ? e.toString() : cause.getMessage();
+                String hint = causeMessage != null
+                        && (causeMessage.contains("timeout")
+                            || causeMessage.contains("canceling statement"))
+                        ? "\nВероятно, отсутствует FOR UPDATE SKIP LOCKED: второй воркер ждёт блокировку."
+                        : "";
+                fail("""
+                        Второй воркер завершился ошибкой.%s
+                        Причина: %s
+                        Ресурс: %s
+                        """.formatted(hint, causeMessage, resource));
+                return; // unreachable
+            } finally {
+                executor.shutdownNow();
+            }
+
+            if (secondBatch.size() != batchSize) {
+                fail("""
+                        Второй воркер должен захватить %d задач, фактически захватил %d.
+                        Первый воркер держал транзакцию открытой; проверь SKIP LOCKED.
+                        """.formatted(batchSize, secondBatch.size()));
+            }
+            validateClaimedStatuses(secondBatch, "второй", resource);
+
+            Set<Long> firstIds = new HashSet<>();
+            for (QueueClaim claim : firstBatch) {
+                firstIds.add(claim.taskId());
+            }
+            Set<Long> secondIds = new HashSet<>();
+            for (QueueClaim claim : secondBatch) {
+                secondIds.add(claim.taskId());
+            }
+            Set<Long> overlap = new HashSet<>(firstIds);
+            overlap.retainAll(secondIds);
+            if (!overlap.isEmpty()) {
+                fail("""
+                        Воркеры захватили пересекающиеся задачи: %s.
+                        Захват пачки должен быть атомарным и не пересекаться.
+                        Первый: %s
+                        Второй: %s
+                        """.formatted(overlap, firstIds, secondIds));
+            }
+        } catch (SQLException e) {
+            fail("Ошибка при проверке SKIP LOCKED: " + e.getMessage());
+        } finally {
+            rollbackQuietly(first);
+            rollbackQuietly(second);
+            closeQuietly(first);
+            closeQuietly(second);
+            executor.shutdownNow();
         }
     }
 
@@ -238,6 +415,166 @@ public final class SqlKataVerifier {
             fail("Не удалось подключиться к тестовой базе PostgreSQL: " + e.getMessage());
             return null; // unreachable
         }
+    }
+
+    // -------------------------------------------------------------------------
+    // EXPLAIN plan and queue concurrency helpers
+    // -------------------------------------------------------------------------
+
+    private String resolveCandidateResource(String rawPath) {
+        String kataResource = normalizeKataResource(rawPath);
+        return Boolean.getBoolean("useSolution")
+                ? toSolutionResource(kataResource)
+                : kataResource;
+    }
+
+    private Connection openConnection() throws SQLException {
+        return DriverManager.getConnection(jdbcUrl, username, password);
+    }
+
+    private PlanSnapshot explainKata(String rawPath) {
+        String resource = resolveCandidateResource(rawPath);
+        String sql = readResource(resource);
+        String explainSql = "EXPLAIN (FORMAT JSON) " + stripTrailingSemicolon(sql);
+
+        try (Connection connection = openConnection()) {
+            connection.setAutoCommit(false);
+            try (Statement statement = connection.createStatement();
+                 ResultSet resultSet = statement.executeQuery(explainSql)) {
+                if (!resultSet.next()) {
+                    fail("EXPLAIN вернул пустой результат для ресурса: " + resource);
+                }
+                String json = resultSet.getString(1);
+                JsonNode root = JSON_MAPPER.readTree(json);
+                JsonNode first = root.isArray() ? root.get(0) : root;
+                JsonNode planNode = first == null ? null : first.get("Plan");
+                if (planNode == null) {
+                    fail("EXPLAIN JSON не содержит поля Plan. Ответ:\n" + json);
+                }
+                List<PlanNode> nodes = new ArrayList<>();
+                collectPlanNodes(planNode, nodes);
+                return new PlanSnapshot(List.copyOf(nodes));
+            } catch (IOException e) {
+                fail("Не удалось разобрать EXPLAIN JSON: " + e.getMessage());
+                return null; // unreachable
+            } finally {
+                rollbackQuietly(connection);
+            }
+        } catch (SQLException e) {
+            fail("""
+                    Не удалось выполнить EXPLAIN для ресурса %s.
+                    SQLState: %s
+                    Ошибка: %s
+                    """.formatted(resource, e.getSQLState(), e.getMessage()));
+            return null; // unreachable
+        }
+    }
+
+    private void collectPlanNodes(JsonNode node, List<PlanNode> result) {
+        if (node == null) {
+            return;
+        }
+        String nodeType = textOrNull(node.get("Node Type"));
+        String relationName = textOrNull(node.get("Relation Name"));
+        String indexName = textOrNull(node.get("Index Name"));
+        if (nodeType != null) {
+            result.add(new PlanNode(nodeType, relationName, indexName));
+        }
+        JsonNode children = node.get("Plans");
+        if (children != null && children.isArray()) {
+            for (JsonNode child : children) {
+                collectPlanNodes(child, result);
+            }
+        }
+    }
+
+    private List<QueueClaim> executeQueueClaim(
+            Connection connection, String sql, int timeoutSeconds) throws SQLException {
+        try (Statement statement = connection.createStatement()) {
+            statement.setQueryTimeout(timeoutSeconds);
+            boolean hasResultSet = statement.execute(sql);
+            if (!hasResultSet) {
+                throw new SQLException(
+                        "Запрос захвата должен возвращать ResultSet через RETURNING");
+            }
+            try (ResultSet resultSet = statement.getResultSet()) {
+                if (resultSet.getMetaData().getColumnCount() < 2) {
+                    throw new SQLException(
+                            "Ожидались как минимум колонки task_id и status в RETURNING");
+                }
+                List<QueueClaim> claims = new ArrayList<>();
+                while (resultSet.next()) {
+                    claims.add(new QueueClaim(
+                            resultSet.getLong(1),
+                            resultSet.getString(2)));
+                }
+                return claims;
+            }
+        }
+    }
+
+    private void validateClaimedStatuses(
+            List<QueueClaim> claims, String workerLabel, String resource) {
+        for (QueueClaim claim : claims) {
+            if (!"PROCESSING".equals(claim.status())) {
+                fail("""
+                        %s воркер вернул задачу %d со статусом %s, ожидался PROCESSING.
+                        Ресурс: %s
+                        """.formatted(workerLabel, claim.taskId(), claim.status(), resource));
+            }
+        }
+    }
+
+    private void rollbackQuietly(Connection connection) {
+        if (connection == null) {
+            return;
+        }
+        try {
+            connection.rollback();
+        } catch (SQLException ignored) {
+            // Соединение закрывается дальше.
+        }
+    }
+
+    private void closeQuietly(Connection connection) {
+        if (connection == null) {
+            return;
+        }
+        try {
+            connection.close();
+        } catch (SQLException ignored) {
+            // Ничего не остаётся сделать.
+        }
+    }
+
+    private static String stripTrailingSemicolon(String sql) {
+        String trimmed = sql.strip();
+        while (trimmed.endsWith(";")) {
+            trimmed = trimmed.substring(0, trimmed.length() - 1).stripTrailing();
+        }
+        return trimmed;
+    }
+
+    private static String textOrNull(JsonNode node) {
+        return node == null || node.isNull() ? null : node.asText();
+    }
+
+    private static String renderPlan(List<PlanNode> nodes) {
+        if (nodes.isEmpty()) {
+            return "  <пустой план>";
+        }
+        StringBuilder result = new StringBuilder();
+        for (PlanNode node : nodes) {
+            result.append("  - ").append(node.nodeType());
+            if (node.relationName() != null) {
+                result.append(" [relation=").append(node.relationName()).append(']');
+            }
+            if (node.indexName() != null) {
+                result.append(" [index=").append(node.indexName()).append(']');
+            }
+            result.append('\n');
+        }
+        return result.toString();
     }
 
     private QueryResult executeInTransaction(Connection connection, String sql)
@@ -575,5 +912,17 @@ public final class SqlKataVerifier {
         static QueryResult withoutRows(int updateCount) {
             return new QueryResult(List.of(), List.of(), false, updateCount);
         }
+    }
+
+    private record PlanNode(String nodeType, String relationName, String indexName) {
+    }
+
+    private record PlanSnapshot(List<PlanNode> nodes) {
+        String render() {
+            return renderPlan(nodes);
+        }
+    }
+
+    private record QueueClaim(long taskId, String status) {
     }
 }
