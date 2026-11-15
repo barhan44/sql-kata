@@ -1,0 +1,38 @@
+-- =============================================================================
+-- KATA 032 · Middle · Доля товара в категории и магазине
+-- =============================================================================
+-- Бизнес-контекст
+--   Категорийный менеджер смотрит вклад каждого товара в выручку. Нужно
+--   одновременно видеть выручку товара, всей его категории и всего магазина,
+--   а также процентные доли. Все расчёты — по доставленным заказам.
+--
+-- Таблицы
+--   orders(order_id, status, ...)
+--   order_items(order_id, product_id, line_total, ...)
+--   products(product_id, name, category_id, ...)
+--   categories(category_id, name)
+--
+-- Требования
+--   1. Учитывай только заказы со статусом 'delivered'.
+--   2. Сначала агрегируй выручку по каждой паре category/product.
+--   3. Через оконные функции посчитай:
+--        SUM(product_revenue) OVER (PARTITION BY category_id)
+--        SUM(product_revenue) OVER ()
+--      и процентные доли с ROUND(..., 2) и NULLIF в знаменателе.
+--   4. Верни ровно восемь колонок в указанном порядке:
+--        category_name       text
+--        product_id          integer
+--        product_name        text
+--        product_revenue     numeric
+--        category_revenue    numeric
+--        store_revenue       numeric
+--        category_share_pct  numeric
+--        store_share_pct     numeric
+--   5. Сортировка: category_name ASC, product_revenue DESC, product_id ASC.
+--   6. Товары без категории и товары без доставленных продаж не включай.
+--
+-- Проверка
+--   Сравниваются имена/типы колонок, значения и порядок строк.
+-- =============================================================================
+
+SELECT 1 WHERE FALSE;

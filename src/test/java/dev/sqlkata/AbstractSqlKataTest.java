@@ -23,7 +23,9 @@ public abstract class AbstractSqlKataTest {
                     .withDatabaseName("sqlkata")
                     .withUsername("kata")
                     .withPassword("kata")
-                    .withInitScript("schema/01_init_schema.sql")
+                    .withInitScripts(
+                            "schema/01_init_schema.sql",
+                            "schema/02_middle_seed.sql")
                     .withStartupTimeout(Duration.ofMinutes(3));
 
     private static final SqlKataVerifier VERIFIER;

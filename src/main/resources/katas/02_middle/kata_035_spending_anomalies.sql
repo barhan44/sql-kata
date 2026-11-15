@@ -1,0 +1,41 @@
+-- =============================================================================
+-- KATA 035 · Middle · Аномальные скачки трат
+-- =============================================================================
+-- Бизнес-контекст
+--   Антифрод ищет резкие изменения покупательского поведения. Заказ считается
+--   аномальным, если его сумма более чем в два раза превышает среднюю сумму
+--   всех предыдущих заказов этого клиента. Первый заказ сравнивать не с чем,
+--   поэтому он не может быть аномалией.
+--
+-- Таблицы
+--   orders(order_id, user_id, created_at, total_amount, status, ...)
+--   users(user_id, full_name, ...)
+--
+-- Требования
+--   1. Для каждого заказа вычисли по окну
+--        PARTITION BY user_id ORDER BY created_at, order_id
+--        ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING:
+--          previous_orders_count — COUNT(*)
+--          previous_avg_amount   — AVG(total_amount)
+--   2. Оставь только строки, где previous_orders_count > 0
+--      и total_amount > 2 * previous_avg_amount.
+--   3. Учитывай все заказы независимо от статуса.
+--   4. Верни ровно восемь колонок в указанном порядке:
+--        user_id                integer
+--        full_name              text
+--        order_id               integer
+--        created_at             timestamptz
+--        total_amount           numeric(12,2)
+--        previous_orders_count  bigint
+--        previous_avg_amount    numeric
+--        ratio_to_previous_avg  numeric — total_amount / previous_avg_amount,
+--                                 округление до 4 знаков (чтобы было видно
+--                                 «чуть больше 2x»)
+--   5. Сортировка: user_id ASC, created_at ASC, order_id ASC.
+--   6. Порог строгий: ровно двукратное превышение аномалией не считается.
+--
+-- Проверка
+--   Сравниваются имена/типы колонок, значения и порядок строк.
+-- =============================================================================
+
+SELECT 1 WHERE FALSE;

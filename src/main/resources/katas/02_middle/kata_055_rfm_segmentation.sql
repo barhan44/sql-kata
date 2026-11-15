@@ -1,0 +1,47 @@
+-- =============================================================================
+-- KATA 055 · Middle · RFM-сегментация клиентов
+-- =============================================================================
+-- Бизнес-контекст
+--   Финальная задача Middle: RFM-сегментация по доставленным заказам на
+--   контрольную дату 2024-07-01. Recency — число дней с последнего заказа,
+--   Frequency — количество доставленных заказов, Monetary — их сумма.
+--   Скоры 1..4: 4 — лучший. Затем клиенты относятся к сегментам и
+--   агрегируются в итоговый отчёт.
+--
+-- Таблицы
+--   orders(order_id, user_id, status, total_amount, created_at, ...)
+--
+-- Требования
+--   1. Учитывай только delivered-заказы; клиентов без них исключи.
+--   2. Для каждого клиента посчитай:
+--        recency_days = DATE '2024-07-01' - MAX(created_at)::date;
+--        frequency    = COUNT(*);
+--        monetary     = SUM(total_amount).
+--   3. Скоры:
+--        r_score = 5 - NTILE(4) OVER (
+--            ORDER BY last_order_date DESC, user_id ASC);
+--        f_score = NTILE(4) OVER (
+--            ORDER BY frequency ASC, user_id ASC);
+--        m_score = NTILE(4) OVER (
+--            ORDER BY monetary ASC, user_id ASC).
+--   4. Сегмент по первому подходящему условию:
+--        vip      — r_score = 4 AND m_score = 4;
+--        loyal    — r_score >= 3 AND f_score >= 2;
+--        at_risk  — r_score <= 2 AND m_score >= 3;
+--        regular  — все остальные.
+--   5. Сгруппируй по сегменту и верни ровно шесть колонок:
+--        segment          text — 'vip', 'loyal', 'at_risk', 'regular'
+--        customers        bigint
+--        avg_recency_days numeric — округление до 1 знака
+--        avg_frequency    numeric — округление до 2 знаков
+--        avg_monetary     numeric — округление до 2 знаков
+--        total_revenue    numeric — округление до 2 знаков
+--   6. Сортировка: total_revenue DESC, segment ASC.
+--   7. NTILE требует tie-breaker user_id, иначе граница квартилей
+--      недетерминирована.
+--
+-- Проверка
+--   Сравниваются имена/типы колонок, значения и порядок строк.
+-- =============================================================================
+
+SELECT 1 WHERE FALSE;

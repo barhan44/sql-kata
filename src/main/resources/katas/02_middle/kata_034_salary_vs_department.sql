@@ -1,0 +1,40 @@
+-- =============================================================================
+-- KATA 034 · Middle · Зарплата и статистика отдела (окна без GROUP BY)
+-- =============================================================================
+-- Бизнес-контекст
+--   HR-отчёт должен показать каждого сотрудника рядом со средней и максимальной
+--   зарплатой его отдела, а также имя самого высокооплачиваемого коллеги.
+--   Агрегаты нужны прямо в строке сотрудника, без сворачивания строк GROUP BY.
+--
+-- Таблицы
+--   employees(employee_id, full_name, department_id, salary, ...)
+--   departments(department_id, name)
+--
+-- Требования
+--   1. Используй AVG() OVER и MAX() OVER с PARTITION BY department_id.
+--   2. Имя топ-сотрудника получи через FIRST_VALUE(full_name) OVER (...)
+--      с сортировкой salary DESC, employee_id ASC.
+--   3. Окно FIRST_VALUE обязано охватывать весь раздел:
+--      ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING.
+--      Иначе FIRST_VALUE вернёт имя текущей строки.
+--   4. Верни ровно девять колонок в указанном порядке:
+--        department_id          integer, может быть NULL
+--        department_name        text, может быть NULL
+--        employee_id            integer
+--        employee_name          text
+--        salary                 numeric(10,2)
+--        department_avg_salary  numeric — AVG(salary), округлённая до 2 знаков
+--        department_max_salary  numeric
+--        top_earner             text — имя топ-сотрудника отдела
+--        salary_vs_avg_pct      numeric — ROUND(
+--                                  (salary - department_avg) / department_avg * 100, 2)
+--      Знак процента: выше средней — положительный.
+--   6. Сортировка: department_id ASC NULLS LAST, salary DESC, employee_id ASC.
+--   7. Все сотрудники остаются в результате; сотрудник без отдела образует
+--      собственное окно с NULL department_name.
+--
+-- Проверка
+--   Сравниваются имена/типы колонок, значения и порядок строк.
+-- =============================================================================
+
+SELECT 1 WHERE FALSE;

@@ -1,0 +1,38 @@
+-- =============================================================================
+-- KATA 027 · Middle · ROW_NUMBER vs RANK vs DENSE_RANK
+-- =============================================================================
+-- Бизнес-контекст
+--   HR анализирует зарплаты внутри отделов. В данных намеренно есть сотрудники
+--   с одинаковой зарплатой в одном отделе. Нужно увидеть, как три ranking-
+--   функции по-разному обрабатывают такие связи.
+--
+-- Таблицы
+--   employees(employee_id, full_name, department_id, salary, ...)
+--   departments(department_id, name)
+--
+-- Требования
+--   1. Разбей сотрудников на окна по department_id.
+--   2. Для каждого сотрудника вычисли:
+--        row_number           — ROW_NUMBER() с ORDER BY salary DESC, employee_id;
+--        rank_position        — RANK() ТОЛЬКО с ORDER BY salary DESC;
+--        dense_rank_position  — DENSE_RANK() ТОЛЬКО с ORDER BY salary DESC.
+--      Tie-breaker employee_id нужен только ROW_NUMBER; если добавить его
+--      в RANK/DENSE_RANK, связи исчезнут и сравнение потеряет смысл.
+--   3. Верни ровно восемь колонок в указанном порядке:
+--        department_id        integer, может быть NULL
+--        department_name      text, может быть NULL
+--        employee_id          integer
+--        employee_name        text
+--        salary               numeric(10,2)
+--        row_number           bigint
+--        rank_position        bigint
+--        dense_rank_position  bigint
+--   4. Все сотрудники должны остаться в результате, включая сотрудника
+--      без отдела. Department_id/department_name для него — NULL.
+--   5. Сортировка: department_id ASC NULLS LAST, salary DESC, employee_id ASC.
+--
+-- Проверка
+--   Сравниваются имена/типы колонок, значения и порядок строк.
+-- =============================================================================
+
+SELECT 1 WHERE FALSE;
