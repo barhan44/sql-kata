@@ -1,0 +1,50 @@
+-- =============================================================================
+-- KATA 090 · Senior · Итоговая витрина retention и LTV-прогноза
+-- =============================================================================
+-- Бизнес-контекст
+--   Нужна итоговая витрина по когортам регистрации 2024 года на горизонте
+--   первых 6 месяцев жизни:
+--     • размер когорты и число активированных клиентов;
+--     • месячная активность и retention;
+--     • выручка и накопительный LTV на клиента;
+--     • наивный прогноз 12-месячного LTV по средней месячной выручке.
+--   «Активность» — наличие заказа (любого статуса), «выручка» — только
+--   delivered-заказы.
+--
+-- Таблицы
+--   users(user_id, registered_at, ...)
+--   orders(order_id, user_id, status, total_amount, created_at, ...)
+--
+-- Требования
+--   1. Когорты — месяцы регистрации с 2024-01-01 00:00:00+03 по
+--      2024-07-01 00:00:00+03 (не включая конец).
+--   2. Через WITH RECURSIVE сгенерируй календарь для каждой когорты:
+--      month_index 0..5, period_month = cohort_month + month_index месяцев.
+--   3. Через LATERAL для каждого пользователя найди min(orders.created_at) —
+--      первую покупку. activated_users в когорте — пользователи,
+--      у которых first_order_at IS NOT NULL.
+--   4. active_users — COUNT(DISTINCT user_id) с любым заказом в period_month.
+--      monthly_revenue — SUM(total_amount) только delivered-заказов этого месяца,
+--      0 если таких нет.
+--   5. Накопительную выручку считай оконной функцией по month_index.
+--   6. Верни ровно одиннадцать колонок:
+--        cohort_month            date
+--        month_index             integer
+--        period_month            date
+--        cohort_size             bigint
+--        activated_users         bigint
+--        active_users            bigint
+--        retention_pct           numeric — 100*active/cohort_size, 2 знака
+--        monthly_revenue         numeric
+--        cumulative_revenue      numeric
+--        cumulative_ltv_per_user numeric — cumulative_revenue / cohort_size, 2 знака
+--        projected_12m_ltv       numeric — (cumulative_revenue / cohort_size
+--                                  / (month_index + 1)) * 12, 2 знака
+--   7. Сортировка: cohort_month ASC, month_index ASC.
+--   8. В результате 6 когорт × 6 месяцев = 36 строк.
+--
+-- Проверка
+--   Сравниваются имена/типы колонок, значения и порядок строк.
+-- =============================================================================
+
+SELECT 1 WHERE FALSE;

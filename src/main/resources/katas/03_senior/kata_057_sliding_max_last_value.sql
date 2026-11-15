@@ -1,0 +1,36 @@
+-- =============================================================================
+-- KATA 057 · Senior · Скользящий максимум и LAST_VALUE
+-- =============================================================================
+-- Бизнес-контекст
+--   Клиентский сервис показывает динамику суммы заказов: насколько текущий
+--   заказ выделяется среди трёх последних и как он соотносится с последним
+--   известным заказом клиента.
+--
+-- Таблицы
+--   orders(order_id, user_id, created_at, total_amount, ...)
+--
+-- Требования
+--   1. Окно PARTITION BY user_id ORDER BY created_at, order_id.
+--   2. rolling_max_3 — MAX(total_amount) по фрейму
+--        ROWS BETWEEN 2 PRECEDING AND CURRENT ROW.
+--   3. last_order_amount — LAST_VALUE(total_amount) с явным фреймом
+--        ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING.
+--      Без UNBOUNDED FOLLOWING LAST_VALUE вернёт текущую строку, а не последнюю.
+--   4. is_rolling_max — boolean: total_amount = rolling_max_3.
+--   5. difference_to_last — последний заказ партиции минус текущий.
+--   6. Верни ровно восемь колонок в указанном порядке:
+--        user_id              integer
+--        order_id             integer
+--        created_at           timestamptz
+--        total_amount         numeric(12,2)
+--        rolling_max_3        numeric(12,2)
+--        is_rolling_max       boolean
+--        last_order_amount    numeric(12,2)
+--        difference_to_last   numeric
+--   7. Сортировка: user_id ASC, created_at ASC, order_id ASC.
+--
+-- Проверка
+--   Сравниваются имена/типы колонок, значения и порядок строк.
+-- =============================================================================
+
+SELECT 1 WHERE FALSE;

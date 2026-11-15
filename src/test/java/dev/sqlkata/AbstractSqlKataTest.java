@@ -10,7 +10,8 @@ import org.testcontainers.containers.PostgreSQLContainer;
  * <p>Контейнер PostgreSQL поднимается ровно один раз на JVM. Maven Surefire
  * настроен на {@code forkCount=1} и {@code reuseForks=true}, поэтому все тесты
  * используют один и тот же экземпляр базы. Схема загружается при старте
- * контейнера из {@code schema/01_init_schema.sql}.</p>
+ * контейнера из {@code schema/01_init_schema.sql}, затем последовательно
+ * {@code schema/02_middle_seed.sql} и {@code schema/03_senior_seed.sql}.</p>
  *
  * <p>Проверяемые SQL-запросы выполняются в транзакциях с откатом, поэтому
  * даже {@code UPDATE}/{@code DELETE}/{@code INSERT ... RETURNING} не меняют
@@ -25,7 +26,8 @@ public abstract class AbstractSqlKataTest {
                     .withPassword("kata")
                     .withInitScripts(
                             "schema/01_init_schema.sql",
-                            "schema/02_middle_seed.sql")
+                            "schema/02_middle_seed.sql",
+                            "schema/03_senior_seed.sql")
                     .withStartupTimeout(Duration.ofMinutes(3));
 
     private static final SqlKataVerifier VERIFIER;
@@ -52,5 +54,20 @@ public abstract class AbstractSqlKataTest {
      */
     protected static void assertKataMatches(String kataResource) {
         VERIFIER.assertKataMatches(kataResource);
+    }
+
+    /**
+     * Проверяет DML-кату по снимку состояния базы.
+     *
+     * <p>Используется для команд без {@code RETURNING}, например {@code MERGE}
+     * в PostgreSQL 16. Проверочный SELECT выполняется в той же транзакции
+     * после DML и до обязательного {@code ROLLBACK}.</p>
+     *
+     * @param kataResource         путь к файлу каты с DML
+     * @param verificationResource путь к SELECT-запросу проверки состояния
+     */
+    protected static void assertKataStateMatches(
+            String kataResource, String verificationResource) {
+        VERIFIER.assertKataStateMatches(kataResource, verificationResource);
     }
 }

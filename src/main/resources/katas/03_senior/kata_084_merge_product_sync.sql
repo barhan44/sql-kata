@@ -1,0 +1,44 @@
+-- =============================================================================
+-- KATA 084 · Senior · Синхронизация каталога через MERGE
+-- =============================================================================
+-- Бизнес-контекст
+--   Ночной импорт каталога должен синхронизировать products со staging-таблицей
+--   product_sync_staging:
+--     • совпавший SKU с action='delete' — удалить из products;
+--     • совпавший SKU с action='upsert' — обновить поля товара;
+--     • отсутствующий SKU — вставить новый товар.
+--   Всё должно выполниться одной командой MERGE.
+--
+-- Таблицы
+--   products(product_id, sku, name, category_id, price, cost, stock, rating,
+--            tags, attributes, is_active, created_at)
+--   product_sync_staging(... те же поля ..., sync_action)
+--
+-- В staging 6 строк:
+--   PHN-IP15, FRN-DSK1 — upsert существующих;
+--   LPT-ZN14, CAM-WEB4K — delete;
+--   ACC-DOCK1 (id 9101), HOM-NSM1 (id 9102) — новые товары.
+--
+-- Требования
+--   1. Используй MERGE INTO products ... USING product_sync_staging.
+--   2. Условие соединения — равенство sku.
+--   3. Ветки строго в таком порядке:
+--        WHEN MATCHED AND s.sync_action = 'delete' THEN DELETE;
+--        WHEN MATCHED THEN UPDATE;
+--        WHEN NOT MATCHED THEN INSERT.
+--   4. UPDATE должен перенести из source:
+--        name, category_id, price, cost, stock, rating, tags, attributes,
+--        is_active, created_at.
+--      product_id и sku существующей строки не меняются.
+--   5. INSERT должен вставить все колонки, включая product_id из staging.
+--   6. RETURNING в PostgreSQL 16 у MERGE нет. Проверка выполняется отдельным
+--      SELECT-снимком состояния products после MERGE; тест использует
+--      assertKataStateMatches. Транзакция затем откатывается.
+--   7. Файл каты должен содержать ровно одну команду MERGE.
+--
+-- Проверка
+--   Сравнивается состояние products после выполнения: удалённых SKU нет,
+--   обновлённые строки изменены, новые вставлены.
+-- =============================================================================
+
+SELECT 1 WHERE FALSE;

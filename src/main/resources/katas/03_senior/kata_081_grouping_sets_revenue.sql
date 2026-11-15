@@ -1,0 +1,38 @@
+-- =============================================================================
+-- KATA 081 · Senior · GROUPING SETS: регион × категория
+-- =============================================================================
+-- Бизнес-контекст
+--   За один проход нужен отчёт по выручке в разрезах:
+--     (region, category), (region), (category), ().
+--   Region — страна клиента. Учитываются только доставленные заказы.
+--
+-- Таблицы
+--   orders(order_id, user_id, status, ...)
+--   order_items(order_id, product_id, line_total, ...)
+--   products(product_id, category_id, ...)
+--   categories(category_id, name)
+--   users(user_id, country, ...)
+--
+-- Требования
+--   1. Используй GROUP BY GROUPING SETS с четырьмя наборами:
+--        (u.country, c.name), (u.country), (c.name), ().
+--   2. Для строк-итогов выведи строку 'ALL' вместо NULL:
+--        region        text — страна или 'ALL'
+--        category_name text — категория или 'ALL'
+--   3. Верни ровно шесть колонок:
+--        region            text
+--        category_name     text
+--        orders_count      bigint — COUNT(DISTINCT order_id)
+--        revenue           numeric — SUM(line_total)
+--        is_region_total   boolean — GROUPING(country) = 1
+--        is_category_total boolean — GROUPING(category_name) = 1
+--   4. Сортировка: is_region_total ASC, is_category_total ASC,
+--      region ASC, category_name ASC.
+--   5. В решении объясни, что GROUPING SETS даёт несколько уровней
+--      агрегации за один скан вместо UNION ALL и как читать GROUPING().
+--
+-- Проверка
+--   Сравниваются имена/типы колонок, значения и порядок строк.
+-- =============================================================================
+
+SELECT 1 WHERE FALSE;

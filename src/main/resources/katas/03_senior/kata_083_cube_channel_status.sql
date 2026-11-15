@@ -1,0 +1,36 @@
+-- =============================================================================
+-- KATA 083 · Senior · CUBE: канал привлечения × статус клиента
+-- =============================================================================
+-- Бизнес-контекст
+--   Маркетинг анализирует доставленную выручку по всем комбинациям канала
+--   заказа и статуса клиента. Канал берём из promo_code, отсутствие промокода
+--   означает 'organic'. CUBE нужен, чтобы получить и частные, и полные итоги.
+--
+-- Таблицы
+--   orders(order_id, user_id, status, promo_code, total_amount, ...)
+--   users(user_id, status, ...)
+--
+-- Требования
+--   1. Для delivered-заказов определи:
+--        channel = COALESCE(promo_code, 'organic')::text;
+--        customer_status = users.status::text.
+--   2. Примени GROUP BY CUBE(channel, customer_status).
+--   3. Замени NULL в группировках на 'ALL':
+--        channel_display   text
+--        status_display    text
+--   4. Верни ровно шесть колонок:
+--        channel_display   text
+--        status_display    text
+--        orders_count      bigint
+--        revenue           numeric
+--        is_channel_total  boolean — GROUPING(channel) = 1
+--        is_status_total   boolean — GROUPING(customer_status) = 1
+--   5. Сортировка: is_channel_total ASC, is_status_total ASC,
+--      channel_display ASC, status_display ASC.
+--   6. Объясни, чем CUBE отличается от GROUPING SETS и ROLLUP.
+--
+-- Проверка
+--   Сравниваются имена/типы колонок, значения и порядок строк.
+-- =============================================================================
+
+SELECT 1 WHERE FALSE;

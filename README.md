@@ -2,7 +2,8 @@
 
 Практический тренажёр по **PostgreSQL 16+** на Java 21, Maven и Testcontainers.
 Задачи идут по уровням: **Junior → Middle → Senior → Pro/Tuning**. В репозитории
-уже доступны два уровня — 55 кат: Junior (001–025) и Middle (026–055).
+уже доступны три уровня — 90 кат: Junior (001–025), Middle (026–055) и
+Senior (056–090).
 
 Проверка не имитирует SQL парсером: настоящий PostgreSQL в Docker выполняет
 запрос ученика и эталонный запрос, после чего сравнивает имена колонок, SQL-типы,
@@ -18,16 +19,19 @@
 - Docker с запущенным daemon (Docker Desktop, Colima, OrbStack и т. п.)
 
 ```bash
-# 1. Убедиться, что инфраструктура и все 55 эталонов работают
+# 1. Убедиться, что инфраструктура и все 90 эталонов работают
 mvn test -DuseSolution=true
 
 # 2. Запустить только одну кату
 mvn test -Dtest=Kata001_ActiveRuCustomersTest
 
-# 3. Запустить блок Middle-кат
+# 3. Запустить Middle-каты
 mvn test -Dtest='Kata02*,Kata03*,Kata04*,Kata05*' -DuseSolution=true
 
-# 4. Обычный режим: заглушки должны падать с diff-сообщением
+# 4. Запустить Senior-каты
+mvn test -Dtest='Kata056*,Kata057*,Kata058*,Kata059*,Kata06*,Kata07*,Kata08*,Kata090*' -DuseSolution=true
+
+# 5. Обычный режим: заглушки должны падать с diff-сообщением
 mvn test
 ```
 
@@ -35,7 +39,7 @@ mvn test
 `solutions/...`. Это быстрый способ проверить целостность всего набора после
 изменения схемы, данных или движка проверки.
 
-При обычном `mvn test` все 55 заглушек `SELECT 1 WHERE FALSE;` ожидаемо падают.
+При обычном `mvn test` все 90 заглушек `SELECT 1 WHERE FALSE;` ожидаемо падают.
 Это и есть стартовое состояние тренажёра.
 
 ## Как решать кату
@@ -78,6 +82,12 @@ mvn test
 такие каты уже есть (052–054). Один файл каты должен содержать **одну
 SQL-команду** (допускается завершающая точка с запятой и комментарии).
 
+Для DML без `RETURNING` (в PostgreSQL 16 это `MERGE`) используется
+`assertKataStateMatches(kataPath, verificationPath)`: после DML в той же
+транзакции выполняется проверочный SELECT, сравниваются снимки состояния
+кандидата и эталона, затем выполняется `ROLLBACK`. Так проверяется kata_084,
+не ослабляя основной движок сравнения.
+
 ### Контейнер
 
 Базовый класс `AbstractSqlKataTest` содержит единственный статический
@@ -92,14 +102,17 @@ SQL-команду** (допускается завершающая точка �
 
 ## Схема и данные
 
-Схема загружается при старте контейнера в два шага:
+Схема загружается при старте контейнера в три шага:
 
 1. `src/main/resources/schema/01_init_schema.sql` — базовая схема и данные.
 2. `src/main/resources/schema/02_middle_seed.sql` — аддитивные Middle-данные:
    сотрудники с равными зарплатами, captured-платёж для зависшего заказа,
    аудит-события с вложенным JSONB и JSON-массивами, таблица контактов.
+3. `src/main/resources/schema/03_senior_seed.sql` — поток событий, счета с
+   пропусками, интервалы подписок, транзакции, граф зависимостей с циклом,
+   staging-дерево, JSONB-корзины и staging для `MERGE`.
 
-Базовые строки не изменяются — скрипт Middle только добавляет новые.
+Базовые строки не изменяются — seed-скрипты только добавляют новые данные.
 
 | Таблица | Строк | Назначение |
 |---|---:|---|
@@ -111,9 +124,18 @@ SQL-команду** (допускается завершающая точка �
 | `orders` | 30 | заказы за январь–июнь 2024 |
 | `order_items` | 44 | позиции с вычисляемым `line_total` |
 | `payments` | 34 | оплаты, неуспешные попытки, возвраты и «зависший» платёж |
-| `user_sessions` | 35 | сессии, устройства и конверсии |
-| `audit_logs` | 38 | журнал событий с дубликатами, вложенным JSONB и тегами |
+| `user_sessions` | 41 | сессии, устройства, конверсии и пересекающиеся интервалы |
+| `audit_logs` | 39 | журнал событий с дубликатами, JSONB и логином без заказа |
 | `user_contact_candidates` | 20 | несколько контактов пользователя из разных источников |
+| `user_events` | 38 | поток логинов, просмотров, поиска и покупок |
+| `invoices` | 20 | счета с пропусками в нумерации |
+| `user_subscriptions` | 20 | пересекающиеся периоды подписок |
+| `account_transactions` | 30 | транзакции для накопительного баланса |
+| `task_nodes` | 16 | вершины графа задач |
+| `task_dependencies` | 22 | рёбра DAG и циклическая компонента |
+| `category_tree_staging` | 12 | staging-дерево с сиротами и превышением глубины |
+| `shopping_carts` | 20 | JSONB-корзины с вложенными items/payment/debug |
+| `product_sync_staging` | 6 | staging для синхронизации каталога через `MERGE` |
 
 В данных намеренно встречаются:
 
@@ -126,6 +148,9 @@ SQL-команду** (допускается завершающая точка �
 - повторные события, аудит-события в пределах минуты и несколько сессий в день;
 - сотрудники с равной зарплатой внутри отдела;
 - JSONB-массивы тегов, нативные массивы и конфликтующие контакты;
+- ежедневные серии логинов, 30-минутные паузы и пересекающиеся сессии;
+- пропуски в нумерации счетов и пересекающиеся подписки;
+- цикл в графе задач, staging-сироты и превышение глубины дерева;
 - иерархии категорий и сотрудников.
 
 ## Каталог Junior-уровня
@@ -208,14 +233,67 @@ SQL-команду** (допускается завершающая точка �
 Пути: `katas/02_middle/` и `solutions/02_middle/`. Тесты —
 `src/test/java/dev/sqlkata/middle/`.
 
+## Прогресс Senior-уровня (056–090)
+
+| Блок | Каты | Темы | Статус |
+|---|---|---|---|
+| 1 | 056–067 | `RANGE`/`ROWS`, gaps & islands, sessionization, интервалы, rolling DAU, concurrency, MoM, именованные окна | ✅ 12/12 |
+| 2 | 068–078 | рекурсивные CTE, деревья, графы, циклы, BFS, разворачивание периодов, кредитный график, DFS | ✅ 11/11 |
+| 3 | 079–090 | `LATERAL`, `GROUPING SETS`/`ROLLUP`/`CUBE`, `MERGE`, SQL/JSON Path, JSONB-трансформация, IQR, keyset pagination, retention/LTV | ✅ 12/12 |
+| **Итого** | **056–090** | **Senior** | **✅ 35/35** |
+
+## Каталог Senior-уровня
+
+| № | Тема | Файл |
+|---|---|---|
+| 056 | 7-дневное среднее через `RANGE` | `rolling_7d_average` |
+| 057 | Скользящий максимум и `LAST_VALUE` | `sliding_max_last_value` |
+| 058 | Gaps & Islands: серии логинов | `login_streaks` |
+| 059 | Sessionization по 30-минутному таймауту | `event_sessionization` |
+| 060 | Пропуски в нумерации счетов | `invoice_number_gaps` |
+| 061 | Слияние пересекающихся интервалов | `merge_intervals` |
+| 062 | Первый овердрафт баланса | `overdraft_detection` |
+| 063 | Самая длинная серия успешных платежей | `payment_winning_streak` |
+| 064 | Rolling 7-day DAU | `rolling_7d_dau` |
+| 065 | Пик одновременных сессий | `concurrency_peak` |
+| 066 | MoM growth с пустыми месяцами | `mom_growth` |
+| 067 | Четыре метрики на именованных окнах | `named_windows_metrics` |
+| 068 | Пути от корня к листьям категорий | `category_leaf_paths` |
+| 069 | Восходящий обход категорий | `category_ancestors` |
+| 070 | Выручка поддеревьев категорий | `subtree_revenue` |
+| 071 | Организационная иерархия и payroll | `org_subtree_payroll` |
+| 072 | Циклы в графе зависимостей | `dependency_cycles` |
+| 073 | Кратчайший путь BFS | `shortest_dependency_path` |
+| 074 | Разбиение подписок по месяцам | `subscription_month_split` |
+| 075 | Рекурсивный график кредита | `recursive_loan_schedule` |
+| 076 | Корневые предки и листья графа | `dependency_roots_leaves` |
+| 077 | Валидация целостности дерева | `tree_integrity` |
+| 078 | DFS pre-order категорий | `category_dfs_order` |
+| 079 | Top-2 через `CROSS JOIN LATERAL` | `lateral_top2` |
+| 080 | Первый заказ после события | `lateral_order_after_event` |
+| 081 | `GROUPING SETS` по региону и категории | `grouping_sets_revenue` |
+| 082 | Иерархические итоги через `ROLLUP` | `rollup_hierarchical_totals` |
+| 083 | `CUBE` по каналу и статусу | `cube_channel_status` |
+| 084 | Синхронизация каталога через `MERGE` | `merge_product_sync` |
+| 085 | SQL/JSON Path по корзинам | `json_path_carts` |
+| 086 | JSONB-агрегация и очистка документа | `jsonb_transform_carts` |
+| 087 | Market Basket Analysis | `market_basket` |
+| 088 | IQR-выбросы позиций | `iqr_outliers` |
+| 089 | Keyset Pagination | `keyset_pagination` |
+| 090 | Retention и LTV-прогноз | `retention_ltv_forecast` |
+
+Пути: `katas/03_senior/` и `solutions/03_senior/`. Тесты —
+`src/test/java/dev/sqlkata/senior/`. Проверочный SELECT для kata_084 лежит в
+`verifications/03_senior/`.
+
 ## Дорожная карта
 
 | Уровень | Каты | Темы | Статус |
 |---|---|---|---|
 | `01_junior` | 001–025 | фильтрация, NULL, JOIN, агрегаты, подзапросы, даты | ✅ готово |
 | `02_middle` | 026–055 | окна, CTE, JSONB, массивы, `LATERAL`, DML с `RETURNING` | ✅ готово |
-| `03_senior` | 056–075 | рекурсия, транзакции, блокировки, `MERGE`, моделирование | ⏳ следующая волна |
-| `04_pro_tuning` | 076–090 | планы, индексы, статистика, `EXPLAIN ANALYZE`, партиционирование | ⏳ запланировано |
+| `03_senior` | 056–090 | продвинутые фреймы, рекурсия и графы, `MERGE`, многомерная агрегация, SQL/JSON | ✅ готово |
+| `04_pro_tuning` | 091–105 | планы, индексы, статистика, `EXPLAIN ANALYZE`, партиционирование | ⏳ запланировано |
 
 Правила добавления следующих волн описаны в [CLAUDE.md](CLAUDE.md).
 
@@ -226,13 +304,13 @@ SQL-команду** (допускается завершающая точка �
 mvn test -DuseSolution=true
 
 # Один тест в режиме эталона
-mvn test -DuseSolution=true -Dtest=Kata055_RfmSegmentationTest
+mvn test -DuseSolution=true -Dtest=Kata090_RetentionLtvForecastTest
 
 # Один тест с решением ученика
-mvn test -Dtest=Kata055_RfmSegmentationTest
+mvn test -Dtest=Kata090_RetentionLtvForecastTest
 
 # Полный diff каты
-cat target/surefire-reports/dev.sqlkata.middle.Kata052_ProductUpsertTest.txt
+cat target/surefire-reports/dev.sqlkata.senior.Kata084_MergeProductSyncTest.txt
 ```
 
 ## Требования к запросу
@@ -250,6 +328,8 @@ cat target/surefire-reports/dev.sqlkata.middle.Kata052_ProductUpsertTest.txt
 - В DML-катах с `INSERT` identity-значения лучше задавать явно: PostgreSQL-
   последовательности не откатываются, поэтому auto-generated id у кандидата
   и эталона различались бы. Это показано в kata_052.
+- `MERGE` в PostgreSQL 16 не поддерживает `RETURNING`; его результат
+  проверяется отдельным SELECT-снимком состояния (kata_084).
 
 Если Docker не запущен, тесты не смогут создать контейнер. Это единственная
 внешняя зависимость тренажёра.

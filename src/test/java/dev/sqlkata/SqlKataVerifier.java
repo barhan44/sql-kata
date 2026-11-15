@@ -33,6 +33,10 @@ import org.postgresql.util.PGobject;
  *
  * <p>Если запустить тесты с {@code -DuseSolution=true}, в качестве кандидата
  * берётся эталонное решение. Это режим самопроверки всего набора кат.</p>
+ *
+ * <p>Для DML без {@code RETURNING} (например, {@code MERGE}) доступен режим
+ * проверки состояния: после команды в той же транзакции выполняется
+ * verification SELECT, и сравниваются снимки состояния кандидата и эталона.</p>
  */
 public final class SqlKataVerifier {
 
@@ -65,6 +69,41 @@ public final class SqlKataVerifier {
             fail(buildFailureMessage(
                     kataResource, candidateResource, solutionResource, useSolution,
                     candidate, reference, mismatch));
+        }
+    }
+
+    /**
+     * Проверяет DML-кату по состоянию базы после выполнения.
+     *
+     * <p>Нужно для команд без {@code RETURNING}, например {@code MERGE} в
+     * PostgreSQL 16, который не поддерживает RETURNING. Кандидат и эталон
+     * выполняются в отдельных транзакциях; затем в каждой транзакции
+     * запускается один и тот же проверочный SELECT, результаты сравниваются,
+     * после чего обе транзакции откатываются.</p>
+     *
+     * @param kataPath        путь к файлу каты (DML)
+     * @param verificationPath путь к SELECT-запросу, читающему итоговое состояние
+     */
+    public void assertKataStateMatches(String kataPath, String verificationPath) {
+        String kataResource = normalizeKataResource(kataPath);
+        String solutionResource = toSolutionResource(kataResource);
+        boolean useSolution = Boolean.getBoolean("useSolution");
+        String candidateResource = useSolution ? solutionResource : kataResource;
+
+        String candidateSql = readResource(candidateResource);
+        String referenceSql = readResource(solutionResource);
+        String verificationSql = readResource(verificationPath);
+
+        QueryResult candidate = executeAndVerify(
+                candidateSql, candidateResource, verificationSql, verificationPath);
+        QueryResult reference = executeAndVerify(
+                referenceSql, solutionResource, verificationSql, verificationPath);
+
+        String mismatch = compare(candidate, reference);
+        if (mismatch != null) {
+            fail(buildStateFailureMessage(
+                    kataResource, candidateResource, solutionResource,
+                    verificationPath, useSolution, candidate, reference, mismatch));
         }
     }
 
@@ -136,6 +175,58 @@ public final class SqlKataVerifier {
                         %s
                         """.formatted(resource, e.getSQLState(), e.getMessage(), indentedSql(sql)));
                 return null; // unreachable
+            } finally {
+                try {
+                    connection.rollback();
+                } catch (SQLException ignored) {
+                    // Соединение всё равно будет закрыто.
+                }
+            }
+        } catch (SQLException e) {
+            fail("Не удалось подключиться к тестовой базе PostgreSQL: " + e.getMessage());
+            return null; // unreachable
+        }
+    }
+
+    private QueryResult executeAndVerify(
+            String sql,
+            String resource,
+            String verificationSql,
+            String verificationResource) {
+        try (Connection connection = DriverManager.getConnection(jdbcUrl, username, password)) {
+            connection.setAutoCommit(false);
+            try {
+                try {
+                    // Собственный результат DML нам не нужен: истина — это
+                    // состояние, которое прочитает verification SQL.
+                    executeInTransaction(connection, sql);
+                } catch (SQLException e) {
+                    fail("""
+                            Не удалось выполнить SQL кандидата/эталона.
+                            Ресурс: %s
+                            SQLState: %s
+                            Ошибка PostgreSQL: %s
+
+                            SQL:
+                            %s
+                            """.formatted(resource, e.getSQLState(), e.getMessage(),
+                            indentedSql(sql)));
+                }
+                try {
+                    return executeInTransaction(connection, verificationSql);
+                } catch (SQLException e) {
+                    fail("""
+                            Не удалось выполнить проверку состояния.
+                            Ресурс проверки: %s
+                            SQLState: %s
+                            Ошибка PostgreSQL: %s
+
+                            SQL проверки:
+                            %s
+                            """.formatted(verificationResource, e.getSQLState(),
+                            e.getMessage(), indentedSql(verificationSql)));
+                    return null; // unreachable
+                }
             } finally {
                 try {
                     connection.rollback();
@@ -345,6 +436,37 @@ public final class SqlKataVerifier {
                 .append(rowCountSuffix(reference)).append(":\n")
                 .append(renderRows(reference)).append('\n')
                 .append("Строки кандидата")
+                .append(rowCountSuffix(candidate)).append(":\n")
+                .append(renderRows(candidate)).append('\n');
+        return message.toString();
+    }
+
+    private String buildStateFailureMessage(
+            String kataResource,
+            String candidateResource,
+            String solutionResource,
+            String verificationResource,
+            boolean useSolution,
+            QueryResult candidate,
+            QueryResult reference,
+            String mismatch) {
+        StringBuilder message = new StringBuilder(4_096);
+        message.append("SQL-ката не прошла проверку состояния\n")
+                .append("Ката:         ").append(kataResource).append('\n')
+                .append("Кандидат:     ").append(candidateResource).append('\n')
+                .append("Эталон:       ").append(solutionResource).append('\n')
+                .append("Проверка:     ").append(verificationResource).append('\n')
+                .append("Режим:        ").append(useSolution
+                        ? "проверка эталона (-DuseSolution=true)"
+                        : "решение пользователя").append("\n\n")
+                .append("Причина: ").append(mismatch).append("\n\n")
+                .append("Сравнивается SELECT-снимок базы после DML.\n\n")
+                .append("Колонки эталона:\n  ").append(describeColumns(reference)).append('\n')
+                .append("Колонки кандидата:\n  ").append(describeColumns(candidate)).append('\n')
+                .append("\nЭталонное состояние")
+                .append(rowCountSuffix(reference)).append(":\n")
+                .append(renderRows(reference)).append('\n')
+                .append("Состояние кандидата")
                 .append(rowCountSuffix(candidate)).append(":\n")
                 .append(renderRows(candidate)).append('\n');
         return message.toString();

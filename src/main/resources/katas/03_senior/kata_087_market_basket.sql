@@ -1,0 +1,32 @@
+-- =============================================================================
+-- KATA 087 · Senior · Market Basket Analysis
+-- =============================================================================
+-- Бизнес-контекст
+--   Нужно понять, какие пары товаров покупают в одном доставленном заказе.
+--   Self-join order_items по order_id с условием a.product_id < b.product_id
+--   даёт каждую неупорядоченную пару ровно один раз.
+--
+-- Таблицы
+--   order_items(order_id, product_id, ...)
+--   orders(order_id, status, ...)
+--   products(product_id, name, ...)
+--
+-- Требования
+--   1. Учитывай только delivered-заказы.
+--   2. Соедини order_items с собой по order_id и a.product_id < b.product_id.
+--   3. Для каждой пары посчитай число уникальных заказов.
+--   4. Верни ровно пять колонок:
+--        product_a_id    integer
+--        product_a_name  text
+--        product_b_id    integer
+--        product_b_name  text
+--        orders_together bigint
+--   5. Сортировка: orders_together DESC, product_a_id ASC, product_b_id ASC.
+--   6. В комментариях объясни, почему a.product_id < b.product_id исключает
+--      зеркальные пары и дублирование.
+--
+-- Проверка
+--   Сравниваются имена/типы колонок, значения и порядок строк.
+-- =============================================================================
+
+SELECT 1 WHERE FALSE;

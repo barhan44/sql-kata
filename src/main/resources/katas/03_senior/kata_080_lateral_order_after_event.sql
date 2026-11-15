@@ -1,0 +1,37 @@
+-- =============================================================================
+-- KATA 080 · Senior · Первый заказ после события (LEFT JOIN LATERAL)
+-- =============================================================================
+-- Бизнес-контекст
+--   Для каждого успешного логина нужно найти первый заказ пользователя,
+--   созданный строго после события входа. Если заказа после входа нет,
+--   строка логина должна остаться с NULL-полями заказа.
+--
+-- Таблицы
+--   audit_logs(log_id, actor_user_id, action, occurred_at, success, ...)
+--   orders(order_id, user_id, created_at, ...)
+--   users(user_id, full_name, ...)
+--
+-- Требования
+--   1. Рассматривай только события action = 'login_success' и success = true
+--      с непустым actor_user_id.
+--   2. Через LEFT JOIN LATERAL найди первый заказ пользователя после
+--      occurred_at. Внутри LATERAL: ORDER BY created_at, order_id LIMIT 1.
+--   3. Верни ровно восемь колонок в указанном порядке:
+--        audit_log_id      bigint
+--        user_id           integer
+--        full_name         text
+--        audit_action      text
+--        event_at          timestamptz
+--        next_order_id     integer, может быть NULL
+--        order_created_at  timestamptz, может быть NULL
+--        hours_until_order numeric — часы между событием и заказом,
+--                             округление до 2 знаков; NULL если заказа нет
+--   4. Сортировка: audit_log_id ASC.
+--   5. Объясни в комментариях, зачем нужен составной индекс
+--      orders(user_id, created_at) для такого LATERAL-паттерна.
+--
+-- Проверка
+--   Сравниваются имена/типы колонок, значения и порядок строк.
+-- =============================================================================
+
+SELECT 1 WHERE FALSE;
