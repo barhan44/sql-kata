@@ -1,0 +1,32 @@
+-- =============================================================================
+-- KATA 011 · Junior · Сверка отделов и сотрудников (FULL OUTER JOIN)
+-- =============================================================================
+-- Бизнес-контекст
+--   HR сверяет справочник отделов и штатное расписание. В данных есть отделы
+--   без сотрудников (например, Legal) и сотрудник без отдела (Kirill Osipov).
+--   INNER JOIN потеряет обе аномалии, LEFT JOIN — только сотрудника без отдела.
+--   Нужен FULL OUTER JOIN, чтобы увидеть обе стороны.
+--
+-- Таблицы
+--   departments(department_id, name, ...)
+--   employees(employee_id, full_name, department_id, salary, ...)
+--
+-- Требования
+--   1. Соедини departments и employees по department_id через FULL OUTER JOIN.
+--   2. Верни ровно пять колонок в указанном порядке:
+--        department_id    integer — может быть NULL
+--        department_name  text    — может быть NULL
+--        employee_id      integer — может быть NULL
+--        employee_name    text    — может быть NULL
+--        salary           numeric(10,2) — может быть NULL
+--   3. Сортировка:
+--        department_id ASC NULLS LAST,
+--        employee_id ASC NULLS LAST.
+--   4. Каждый отдел без сотрудников должен дать строку с employee_id IS NULL,
+--      а сотрудник без отдела — строку с department_id IS NULL.
+--
+-- Проверка
+--   Сравниваются имена колонок, их типы, значения и порядок строк.
+-- =============================================================================
+
+SELECT 1 WHERE FALSE;
